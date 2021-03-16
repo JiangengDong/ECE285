@@ -1,5 +1,5 @@
-import torch
 import numpy as np
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
@@ -57,7 +57,7 @@ class Architect(object):
         except:
             moment = torch.zeros_like(theta)
         final_loss = loss1 + loss + \
-            self.args.weight_lambda * (loss_soft + loss_soft1)
+                     self.args.weight_lambda * (loss_soft + loss_soft1)
         final_loss.backward()
         grad_model = [v.grad.data for v in self.model.parameters()]
         dtheta = _concat(grad_model).data + self.network_weight_decay * theta

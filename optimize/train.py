@@ -1,21 +1,19 @@
+import argparse
+import glob
+import logging
 import os
 import sys
 import time
-import glob
+
 import numpy as np
 import torch
-import utils
-import logging
-import argparse
+import torch.backends.cudnn as cudnn
 import torch.nn as nn
-import genotypes
 import torch.utils
 import torchvision.datasets as dset
-import torch.backends.cudnn as cudnn
 
-from torch.autograd import Variable
-from model import NetworkCIFAR as Network
-
+import utils
+from optimize.model import NetworkCIFAR as Network
 
 parser = argparse.ArgumentParser("cifar")
 parser.add_argument('--data', type=str, default='../data', help='location of the data corpus')
@@ -151,7 +149,7 @@ def train(train_queue, model, criterion, optimizer):
         loss = criterion(logits, target)
         if args.auxiliary:
             loss_aux = criterion(logits_aux, target)
-            loss += args.auxiliary_weight*loss_aux
+            loss += args.auxiliary_weight * loss_aux
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
         optimizer.step()

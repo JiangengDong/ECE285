@@ -1,12 +1,10 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from operations import *
 import numpy as np
+import torch.nn.functional as F
 from torch.autograd import Variable
-from genotypes import PRIMITIVES
+
 from genotypes import Genotype
-from mmcv.cnn import xavier_init
+from genotypes import PRIMITIVES
+from operations import *
 
 
 class MixedOp(nn.Module):
@@ -46,7 +44,7 @@ class Cell(nn.Module):
         # 5, 6, 7, 8
         # 9, 10, 11, 12, 13
         for i in range(self._steps):
-            for j in range(2+i):
+            for j in range(2 + i):
                 stride = 2 if reduction and j < 2 else 1
                 op = MixedOp(C, stride)
                 self._ops.append(op)
@@ -58,7 +56,7 @@ class Cell(nn.Module):
         states = [s0, s1]
         offset = 0
         for i in range(self._steps):
-            s = sum(self._ops[offset+j](h, weights[offset+j]) for j, h in enumerate(states))
+            s = sum(self._ops[offset + j](h, weights[offset + j]) for j, h in enumerate(states))
             offset += len(states)
             states.append(s)
 
@@ -67,7 +65,7 @@ class Cell(nn.Module):
 
 class Network(nn.Module):
 
-    def __init__(self, C, num_classes, layers, criterion, steps=4, multiplier=4, stem_multiplier=3):
+    def __init__(self, C, num_classes, layers, criterion, steps=4, multiplier=4, stem_multiplier=64):
         super(Network, self).__init__()
         self._C = C
         self._num_classes = num_classes
@@ -76,7 +74,7 @@ class Network(nn.Module):
         self._steps = steps
         self._multiplier = multiplier
 
-        C_curr = stem_multiplier*C
+        C_curr = stem_multiplier * C
         self.stem = nn.Sequential(
             nn.Conv2d(3, C_curr, 3, padding=1, bias=False),
             nn.BatchNorm2d(C_curr)
@@ -86,7 +84,7 @@ class Network(nn.Module):
         self.cells = nn.ModuleList()
         reduction_prev = False
         for i in range(layers):
-            if i in [layers//3, 2*layers//3]:
+            if i in [layers // 6, 2 * layers // 6, 3 * layers // 6, 4 * layers // 6, 5 * layers // 6]:
                 C_curr *= 2
                 reduction = True
             else:
@@ -94,10 +92,15 @@ class Network(nn.Module):
             cell = Cell(steps, multiplier, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
             reduction_prev = reduction
             self.cells += [cell]
-            C_prev_prev, C_prev = C_prev, multiplier*C_curr
+            C_prev_prev, C_prev = C_prev, multiplier * C_curr
 
         self.global_pooling = nn.AdaptiveAvgPool2d(1)
-        self.classifier = nn.Linear(C_prev, num_classes)
+        self.classifier = nn.Sequential(
+            nn.Linear(C_prev*7*7, 4096),
+            nn.ReLU(),
+            nn.Dropout(),
+            nn.Linear(4090, 1470)
+        )
 
         self._initialize_alphas()
 
@@ -131,6 +134,7 @@ class Network(nn.Module):
             s0, s1 = s1, cell(s0, s1, weights)
         out = self.global_pooling(s1)
         logits = self.classifier(out.view(out.size(0), -1))
+        logits = logits.view(-1, 7, 7, 30)
         return logits
 
     def _loss(self, input, target):
@@ -138,11 +142,11 @@ class Network(nn.Module):
         return self._criterion(logits, target)
 
     def _initialize_alphas(self):
-        k = sum(1 for i in range(self._steps) for n in range(2+i))
+        k = sum(1 for i in range(self._steps) for n in range(2 + i))
         num_ops = len(PRIMITIVES)
 
-        self.alphas_normal = Variable(1e-3*torch.randn(k, num_ops).cuda(), requires_grad=True)
-        self.alphas_reduce = Variable(1e-3*torch.randn(k, num_ops).cuda(), requires_grad=True)
+        self.alphas_normal = Variable(1e-3 * torch.randn(k, num_ops).cuda(), requires_grad=True)
+        self.alphas_reduce = Variable(1e-3 * torch.randn(k, num_ops).cuda(), requires_grad=True)
         self._arch_parameters = [
             self.alphas_normal,
             self.alphas_reduce,
@@ -176,7 +180,7 @@ class Network(nn.Module):
         gene_reduce = _parse(F.softmax(self.alphas_reduce, dim=-1).data.cpu().numpy())
         # import ipdb; ipdb.set_trace()
 
-        concat = range(2+self._steps-self._multiplier, self._steps+2)
+        concat = range(2 + self._steps - self._multiplier, self._steps + 2)
         genotype = Genotype(
             normal=gene_normal, normal_concat=concat,
             reduce=gene_reduce, reduce_concat=concat
