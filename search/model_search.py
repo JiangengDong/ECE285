@@ -64,11 +64,9 @@ class Cell(nn.Module):
 
 
 class Network(nn.Module):
-
-    def __init__(self, C, num_classes, layers, criterion, steps=4, multiplier=4, stem_multiplier=64):
+    def __init__(self, C, layers, criterion, steps=4, multiplier=2, stem_multiplier=1):
         super(Network, self).__init__()
         self._C = C
-        self._num_classes = num_classes
         self._layers = layers
         self._criterion = criterion
         self._steps = steps
@@ -80,15 +78,12 @@ class Network(nn.Module):
             nn.BatchNorm2d(C_curr)
         )
 
-        C_prev_prev, C_prev, C_curr = C_curr, C_curr, C
+        C_prev_prev, C_prev, C_curr = C_curr, C_curr, C_curr
         self.cells = nn.ModuleList()
         reduction_prev = False
         for i in range(layers):
-            if i in [layers // 6, 2 * layers // 6, 3 * layers // 6, 4 * layers // 6, 5 * layers // 6]:
-                C_curr *= 2
-                reduction = True
-            else:
-                reduction = False
+            C_curr *= 2
+            reduction = True
             cell = Cell(steps, multiplier, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
             reduction_prev = reduction
             self.cells += [cell]
@@ -96,16 +91,16 @@ class Network(nn.Module):
 
         self.global_pooling = nn.AdaptiveAvgPool2d(1)
         self.classifier = nn.Sequential(
-            nn.Linear(C_prev*7*7, 4096),
+            nn.Linear(384 * 7 * 7, 4096),
             nn.ReLU(),
             nn.Dropout(),
-            nn.Linear(4090, 1470)
+            nn.Linear(4096, 1470)
         )
 
         self._initialize_alphas()
 
     def new(self):
-        model_new = Network(self._C, self._num_classes, self._layers, self._criterion).cuda()
+        model_new = Network(self._C, self._layers, self._criterion).cuda()
         for x, y in zip(model_new.arch_parameters(), self.arch_parameters()):
             x.data.copy_(y.data)
         return model_new
@@ -132,8 +127,8 @@ class Network(nn.Module):
             else:
                 weights = F.softmax(self.alphas_normal, dim=-1)
             s0, s1 = s1, cell(s0, s1, weights)
-        out = self.global_pooling(s1)
-        logits = self.classifier(out.view(out.size(0), -1))
+        s1 = s1.view(s1.size(0), -1)
+        logits = self.classifier(s1)
         logits = logits.view(-1, 7, 7, 30)
         return logits
 
@@ -156,7 +151,6 @@ class Network(nn.Module):
         return self._arch_parameters
 
     def genotype(self):
-
         def _parse(weights):
             gene = []
             n = 2

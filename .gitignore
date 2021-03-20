@@ -2,6 +2,9 @@
 .trash
 .vscode
 .idea
+search-*/
+eval-*/
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
